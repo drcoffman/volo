@@ -79,6 +79,10 @@ KIWIX_SERVE_URL = config['SERVER']['KIWIX_SERVE_URL']
 HEADING_COUNT = int(config['SERVER']['HEADING_COUNT'])
 AI_MODEL = config['SERVER']['AI_MODEL']
 OLLAMA_API_URL = config['SERVER']['OLLAMA_API_URL']
+
+# Log the AI model being used
+print(f"🤖 AI Model loaded: {AI_MODEL}")
+print(f"🔗 Ollama API URL: {OLLAMA_API_URL}")
 #API_KEY = config['SERVER']['API_KEY']
 API_KEY = 'support-for-custom-api-providers-is-currently-unavailable'
 # Global variable to store the kiwix-serve process
@@ -187,13 +191,60 @@ def select_best_heading(query, headings):
     except Exception as e:
         print(f"Error selecting best heading: {e}")
         return None
+
+# Function to select the top 3 most relevant headings using the LLM
+def select_top_3_headings(query, headings):
+    print("Selecting the top 3 most relevant headings...")
+    
+    # Construct the headings string with newlines
+    headings_str = '\n'.join(headings)
+    
+    try:
+        response = requests.post(
+            OLLAMA_API_URL,
+            headers=API_HEADERS,
+            json={
+                "model": AI_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a research assistant. Your task is to select the 3 most relevant headings from the list provided based on the user's query. Ensure all headings are in the provided list. Return them as a JSON array in order of relevance (most relevant first)."},
+                    {"role": "user", "content": f"The user's query is: {query}. Here are the headings:\n{headings_str}\n\nPlease select the 3 most relevant headings and return them as a JSON array like: [\"heading1\", \"heading2\", \"heading3\"]"},
+                ],
+                "stream": False,
+                "options": {
+                    "temperature": 0.48,
+                    "num_ctx": 2048,
+                }
+            }
+        )
+        response.raise_for_status()
+        selected_headings_json = response.json()["message"]["content"].strip()
+        print(f"Selected headings JSON: {selected_headings_json}")
+        
+        # Parse the JSON response
+        import json
+        selected_headings = json.loads(selected_headings_json)
+        print(f"Top 3 headings: {selected_headings}")
+        return selected_headings
+    except Exception as e:
+        print(f"Error selecting top 3 headings: {e}")
+        # Fallback: return first 3 headings
+        return headings[:3]
+# Function to get ZIM file name without extension
+def get_zim_file_name():
+    """Extract the ZIM file name without extension from the full path."""
+    import os
+    return os.path.splitext(os.path.basename(ZIM_FILE_PATH))[0]
+
 # Function to fetch article content from Kiwix server
 def fetch_article_content(heading):
     # Replace spaces with underscores
     formatted_heading = heading.replace(" ", "_")
     
+    # Get the ZIM file name dynamically
+    zim_name = get_zim_file_name()
+    
     # Construct the URL
-    article_url = f"{KIWIX_SERVE_URL}/wikipedia_en_all_nopic_2024-06/A/{formatted_heading}"
+    article_url = f"{KIWIX_SERVE_URL}/{zim_name}/A/{formatted_heading}"
     print(f"Fetching article from: {article_url}")
     try:
         # Fetch the HTML content
@@ -203,10 +254,41 @@ def fetch_article_content(heading):
         soup = BeautifulSoup(response.text, "html.parser")
         # Extract readable text from the article
         article_text = soup.get_text(separator="\n", strip=True)
-        return article_text
+        return article_text, article_url
     except requests.exceptions.RequestException as e:
         print(f"Error fetching article content: {e}")
-        return None
+        return None, None
+
+# Function to fetch multiple articles and return combined content with citations
+def fetch_multiple_articles(headings):
+    print(f"Fetching content for {len(headings)} articles...")
+    
+    articles_data = []
+    combined_content = ""
+    citations = []
+    
+    for i, heading in enumerate(headings, 1):
+        print(f"Fetching article {i}/{len(headings)}: {heading}")
+        article_content, article_url = fetch_article_content(heading)
+        
+        if article_content and article_url:
+            articles_data.append({
+                'heading': heading,
+                'content': article_content,
+                'url': article_url
+            })
+            
+            # Add article to combined content with clear separation
+            combined_content += f"\n\n=== ARTICLE {i}: {heading} ===\n\n"
+            combined_content += article_content
+            
+            # Create citation
+            citation = f"[📖 Source {i}: {heading}]({article_url})"
+            citations.append(citation)
+        else:
+            print(f"Failed to fetch article: {heading}")
+    
+    return articles_data, combined_content, citations
 # Search endpoint
 @app.route("/search", methods=["POST"])
 def search():
@@ -260,6 +342,7 @@ def search():
         response.raise_for_status()
         tool_calls = response.json().get("message", {}).get("tool_calls", [])
         if tool_calls:
+            print(f"Tool calls: {tool_calls}")
             tool_call = tool_calls[0]
             if tool_call["function"]["name"] == "search_engine":
                 # Access the arguments directly (it's already a dictionary)
@@ -274,31 +357,50 @@ def search():
                         all_headings.extend(first_n_headings)
                 if not all_headings:
                     return jsonify({"message": "No search results found."})
-                # Step 3: Select the best heading using the LLM
-                best_heading = select_best_heading(query, all_headings)
-                if best_heading is None:
+                # Step 3: Select the top 3 most relevant headings using the LLM
+                top_3_headings = select_top_3_headings(query, all_headings)
+                if not top_3_headings:
                     return "No search results found."
-                # Step 4: Fetch the article content for the best heading
-                article_content = fetch_article_content(best_heading)
-                if article_content is None:
-                    return "Failed to fetch article content for the selected heading. This can happen if the ZIM file path is incorrect or (more rarely) if the AI made a mistake in selecting the heading."
+                
+                # Step 4: Fetch content for all 3 articles
+                articles_data, combined_content, citations = fetch_multiple_articles(top_3_headings)
+                if not articles_data:
+                    return "Failed to fetch article content. This can happen if the ZIM file path is incorrect or if the AI made a mistake in selecting the headings."
+                
                 updated_context = context + [
                     {"role": "user", "content": query},
-                    {"role": "assistant", "content": f"Search results: {article_content}"}
+                    {"role": "assistant", "content": f"Search results from {len(articles_data)} articles: {combined_content}"}
                 ]
+                
                 # Step 5: Generate a detailed response based on the aggregated search results
+                # Combine all citations
+                all_citations = "\n".join(citations)
+                print(f"🔗 Using {len(articles_data)} article URLs")
+                print(f"📝 All citations: {all_citations}")
+                
                 def generate_final_response():
+                    # First, yield all citations
+                    yield all_citations + "\n\n"
+                    
                     final_response = requests.post(
                         OLLAMA_API_URL,
                         json={
                             "model": AI_MODEL,
                             "messages": [
-                                {"role": "system", "content": '''You are an expert research assistant. Present the search results provided in a natural language response. In addition to summarizing the key points, give an extremely detailed and long analysis that includes extensive detail, nuanced insights, and any potential implications or future outlooks related to each piece of information. As a researcher, ensure that you cite your sources and provide references.
-                                \n
-                                Additional Instructions: Enclose LaTeX math equations (if any) in $$. Example: $x^2 + y^2 = z^2$ and $( E = mc^2 $)'''},
+                                {"role": "system", "content": f'''You are an expert research assistant. You have been provided with content from multiple Wikipedia articles. Your task is to synthesize information from all these sources to provide a comprehensive, detailed response to the user's query.
+
+Instructions:
+1. Analyze and synthesize information from ALL provided articles
+2. Identify connections, patterns, and relationships between the different sources
+3. Present a unified, comprehensive analysis that draws from multiple perspectives
+4. Highlight areas where sources agree, disagree, or complement each other
+5. Unless other wise asked, provide only moderate detail and implications
+6. Ensure your response is well-structured and flows logically
+
+Additional Instructions: Enclose LaTeX math equations (if any) in $$. Example: $x^2 + y^2 = z^2$ and $( E = mc^2 $)'''},
                                 *updated_context,
                                 {"role": "user", "content": f"The users query is: {query}"},
-                                {"role": "user", "content": f"The search results are: {article_content}"}
+                                {"role": "user", "content": f"The search results from {len(articles_data)} articles are: {combined_content}"}
                             ],
                             "stream": True,
                             "options": {

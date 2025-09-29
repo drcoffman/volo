@@ -236,3 +236,39 @@ body {
   border: none;
   cursor: pointer;
 }
+
+/* Citation link styling */
+.ai-response a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid #007bff;
+  transition: all 0.2s ease;
+}
+
+.ai-response a:hover {
+  color: #0056b3;
+  border-bottom-color: #0056b3;
+  background-color: #f8f9fa;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+/* Special styling for source citations */
+.ai-response p:first-child a {
+  display: inline-block;
+  background-color: #e3f2fd;
+  color: #1976d2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #bbdefb;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.ai-response p:first-child a:hover {
+  background-color: #bbdefb;
+  color: #0d47a1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}

@@ -1,11 +1,13 @@
 #!/bin/bash
 # Navigate to the project directory
 
-#npm install react react-markdown react-katex remark-math rehype-katex child_process --force
+# Activate virtual environment
+source venv/bin/activate
 
 # Start the Flask server in the background
 echo "Starting..."
-#python flaskserver.py &
-#python3 flaskserver.py &
+python3 flaskserver.py &
+
+# Install npm packages and start React server
 npm install react axios react-markdown remark-math rehype-katex --force
 npm run start-server
