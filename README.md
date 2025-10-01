@@ -87,8 +87,19 @@ On macOS/Linux, run the commands:
 cd volo
 ./start.sh
 ```
-On Windows, navigate to the cloned repository and double click start.bat
 
+In two separate terminals:
+```bash
+cd code/volo
+source venv/bin/activate
+python3 flaskserver.py
+```
+
+in the second terminal:
+``` bash
+cd code/volo
+npm start
+```
 ---
 
 ## 🚀 Usage

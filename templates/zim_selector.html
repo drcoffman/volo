@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIM File Selector - Volo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .current-zim {
+            background: #f0f7ff;
+            border-left: 4px solid #667eea;
+            padding: 15px 20px;
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+
+        .current-zim h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
+        }
+
+        .current-zim p {
+            color: #333;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .controls {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .controls h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .directory-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .directory-input input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .directory-input input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .zim-list {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .zim-list h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .filter-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .zim-files {
+            display: grid;
+            gap: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .zim-file-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: #fafafa;
+        }
+
+        .zim-file-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .zim-file-card.selected {
+            border-color: #667eea;
+            background: #f0f7ff;
+        }
+
+        .zim-file-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .zim-file-path {
+            font-size: 0.85rem;
+            color: #666;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+
+        .zim-file-size {
+            font-size: 0.9rem;
+            color: #999;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .message {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 8px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗂️ ZIM File Selector</h1>
+            <p>Select a ZIM file to use with your Volo knowledge base</p>
+            
+            <div class="current-zim" id="currentZimInfo">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading current ZIM file...
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h2>📁 Browse Directory</h2>
+            <div class="directory-input">
+                <input 
+                    type="text" 
+                    id="directoryPath" 
+                    placeholder="/Users/drcoffman/code/zim"
+                    value="/Users/drcoffman/code/zim"
+                >
+                <button class="btn btn-primary" onclick="loadZimFiles()">Browse</button>
+            </div>
+        </div>
+
+        <div class="zim-list">
+            <h2>Available ZIM Files</h2>
+            
+            <div id="messageContainer"></div>
+            
+            <div class="stats" id="statsContainer" style="display: none;">
+                <div class="stat-card">
+                    <div class="stat-label">Total Files</div>
+                    <div class="stat-value" id="totalFiles">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Size</div>
+                    <div class="stat-value" id="totalSize">0 GB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Selected File</div>
+                    <div class="stat-value" id="selectedFileName">None</div>
+                </div>
+            </div>
+
+            <input 
+                type="text" 
+                id="filterInput" 
+                class="filter-input" 
+                placeholder="🔍 Filter ZIM files by name..."
+                onkeyup="filterZimFiles()"
+                style="display: none;"
+            >
+            
+            <div id="zimFilesContainer">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading ZIM files...
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: center;">
+                <button class="btn btn-primary" id="selectBtn" onclick="selectZimFile()" disabled>
+                    Select ZIM File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let zimFiles = [];
+        let selectedZimPath = null;
+
+        // Load current ZIM file info on page load
+        async function loadCurrentZim() {
+            try {
+                const response = await fetch('/zim/current');
+                const data = await response.json();
+                
+                const html = `
+                    <h3>Currently Loaded:</h3>
+                    <p><strong>Name:</strong> ${data.zim_name}</p>
+                    <p><strong>Path:</strong> ${data.zim_file_path}</p>
+                    <p><strong>Status:</strong> ${data.exists ? '✅ File exists' : '❌ File not found'}</p>
+                `;
+                
+                document.getElementById('currentZimInfo').innerHTML = html;
+            } catch (error) {
+                document.getElementById('currentZimInfo').innerHTML = `
+                    <h3>Error loading current ZIM file</h3>
+                    <p style="color: #721c24;">${error.message}</p>
+                `;
+            }
+        }
+
+        // Load ZIM files from directory
+        async function loadZimFiles() {
+            const directory = document.getElementById('directoryPath').value;
+            const container = document.getElementById('zimFilesContainer');
+            const filterInput = document.getElementById('filterInput');
+            const statsContainer = document.getElementById('statsContainer');
+            
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading ZIM files from directory...
+                </div>
+            `;
+            
+            filterInput.style.display = 'none';
+            statsContainer.style.display = 'none';
+            clearMessage();
+            
+            try {
+                const response = await fetch(`/zim/list?directory=${encodeURIComponent(directory)}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    zimFiles = data.zim_files;
+                    displayZimFiles(zimFiles);
+                    filterInput.style.display = 'block';
+                    statsContainer.style.display = 'flex';
+                    updateStats();
+                } else {
+                    container.innerHTML = `
+                        <div class="loading">
+                            <p style="color: #721c24;">❌ ${data.error || 'Failed to load ZIM files'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="loading">
+                        <p style="color: #721c24;">❌ Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Display ZIM files
+        function displayZimFiles(files) {
+            const container = document.getElementById('zimFilesContainer');
+            
+            if (files.length === 0) {
+                container.innerHTML = `
+                    <div class="loading">
+                        <p>No ZIM files found in this directory.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const html = files.map(file => `
+                <div class="zim-file-card" onclick="selectCard('${file.path}')" data-path="${file.path}">
+                    <div class="zim-file-name">📚 ${file.name}</div>
+                    <div class="zim-file-path">${file.relative_path}</div>
+                    <div class="zim-file-size">Size: ${formatBytes(file.size)}</div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `<div class="zim-files">${html}</div>`;
+        }
+
+        // Format bytes to human readable
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Select a ZIM file card
+        function selectCard(path) {
+            // Remove selected class from all cards
+            document.querySelectorAll('.zim-file-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked card
+            const card = document.querySelector(`[data-path="${path}"]`);
+            if (card) {
+                card.classList.add('selected');
+                selectedZimPath = path;
+                document.getElementById('selectBtn').disabled = false;
+                
+                // Update selected file name in stats
+                const fileName = zimFiles.find(f => f.path === path)?.name || 'Unknown';
+                document.getElementById('selectedFileName').textContent = fileName;
+            }
+        }
+
+        // Select and switch to ZIM file
+        async function selectZimFile() {
+            if (!selectedZimPath) {
+                showMessage('Please select a ZIM file first.', 'error');
+                return;
+            }
+            
+            const selectBtn = document.getElementById('selectBtn');
+            selectBtn.disabled = true;
+            selectBtn.textContent = 'Switching...';
+            
+            try {
+                const response = await fetch('/zim/select', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        zim_file_path: selectedZimPath
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showMessage(`✅ Successfully switched to: ${data.zim_name}`, 'success');
+                    await loadCurrentZim();
+                } else {
+                    showMessage(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                selectBtn.disabled = false;
+                selectBtn.textContent = 'Select ZIM File';
+            }
+        }
+
+        // Filter ZIM files
+        function filterZimFiles() {
+            const filterValue = document.getElementById('filterInput').value.toLowerCase();
+            const filteredFiles = zimFiles.filter(file => 
+                file.name.toLowerCase().includes(filterValue) ||
+                file.relative_path.toLowerCase().includes(filterValue)
+            );
+            displayZimFiles(filteredFiles);
+        }
+
+        // Show message
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="message ${type}">${message}</div>`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // Clear message
+        function clearMessage() {
+            document.getElementById('messageContainer').innerHTML = '';
+        }
+
+        // Update statistics
+        function updateStats() {
+            const totalFiles = zimFiles.length;
+            const totalSize = zimFiles.reduce((sum, file) => sum + file.size, 0);
+            
+            document.getElementById('totalFiles').textContent = totalFiles;
+            document.getElementById('totalSize').textContent = formatBytes(totalSize);
+        }
+
+        // Allow Enter key to trigger browse
+        document.getElementById('directoryPath').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                loadZimFiles();
+            }
+        });
+
+        // Load on page load
+        window.onload = function() {
+            loadCurrentZim();
+            loadZimFiles();
+        };
+    </script>
+</body>
+</html>
+

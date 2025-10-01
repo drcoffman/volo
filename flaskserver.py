@@ -4,12 +4,13 @@ import atexit
 import signal
 import subprocess
 import time
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, render_template
 from flask_cors import CORS
 from bs4 import BeautifulSoup
 import requests
 import json
 import configparser
+import glob
 app = Flask(__name__)
 CORS(app)
 # Define the path to the config file
@@ -133,13 +134,17 @@ signal.signal(signal.SIGTERM, handle_signal)  # Termination signal
 # Start kiwix-serve when the app starts
 start_kiwix_serve()
 # Function to perform a search using kiwix-search
-def perform_search(query):
+def perform_search(query, zim_path=None):
     print(f"Searching for: {query}")
+    
+    # Use provided ZIM path or default
+    if zim_path is None:
+        zim_path = ZIM_FILE_PATH
     
     # Execute the kiwix-search command
     try:
         result = subprocess.run(
-            [KIWIX_SEARCH_PATH, ZIM_FILE_PATH, query],
+            [KIWIX_SEARCH_PATH, zim_path, query],
             capture_output=True,
             text=True
         )
@@ -230,18 +235,62 @@ def select_top_3_headings(query, headings):
         # Fallback: return first 3 headings
         return headings[:3]
 # Function to get ZIM file name without extension
-def get_zim_file_name():
+def get_zim_file_name(zim_path=None):
     """Extract the ZIM file name without extension from the full path."""
     import os
-    return os.path.splitext(os.path.basename(ZIM_FILE_PATH))[0]
+    if zim_path is None:
+        zim_path = ZIM_FILE_PATH
+    return os.path.splitext(os.path.basename(zim_path))[0]
+
+# Function to list available ZIM files in a directory
+def list_zim_files(directory_path):
+    """List all .zim files in the specified directory and subdirectories."""
+    zim_files = []
+    try:
+        # Search for .zim files recursively
+        pattern = os.path.join(directory_path, "**", "*.zim")
+        found_files = glob.glob(pattern, recursive=True)
+        
+        for file_path in found_files:
+            file_info = {
+                'path': file_path,
+                'name': os.path.basename(file_path),
+                'size': os.path.getsize(file_path),
+                'relative_path': os.path.relpath(file_path, directory_path)
+            }
+            zim_files.append(file_info)
+        
+        # Sort by name
+        zim_files.sort(key=lambda x: x['name'])
+        
+    except Exception as e:
+        print(f"Error listing ZIM files: {e}")
+    
+    return zim_files
+
+# Function to restart kiwix-serve with a new ZIM file
+def restart_kiwix_serve_with_zim(zim_file_path):
+    """Stop current kiwix-serve and start it with a new ZIM file."""
+    global kiwix_serve_process, ZIM_FILE_PATH
+    
+    # Stop current process
+    stop_kiwix_serve()
+    
+    # Update the ZIM file path
+    ZIM_FILE_PATH = zim_file_path
+    
+    # Start with new ZIM file
+    start_kiwix_serve()
+    
+    return True
 
 # Function to fetch article content from Kiwix server
-def fetch_article_content(heading):
+def fetch_article_content(heading, zim_path=None):
     # Replace spaces with underscores
     formatted_heading = heading.replace(" ", "_")
     
     # Get the ZIM file name dynamically
-    zim_name = get_zim_file_name()
+    zim_name = get_zim_file_name(zim_path)
     
     # Construct the URL
     article_url = f"{KIWIX_SERVE_URL}/{zim_name}/A/{formatted_heading}"
@@ -260,7 +309,7 @@ def fetch_article_content(heading):
         return None, None
 
 # Function to fetch multiple articles and return combined content with citations
-def fetch_multiple_articles(headings):
+def fetch_multiple_articles(headings, zim_path=None):
     print(f"Fetching content for {len(headings)} articles...")
     
     articles_data = []
@@ -269,7 +318,7 @@ def fetch_multiple_articles(headings):
     
     for i, heading in enumerate(headings, 1):
         print(f"Fetching article {i}/{len(headings)}: {heading}")
-        article_content, article_url = fetch_article_content(heading)
+        article_content, article_url = fetch_article_content(heading, zim_path)
         
         if article_content and article_url:
             articles_data.append({
@@ -289,10 +338,70 @@ def fetch_multiple_articles(headings):
             print(f"Failed to fetch article: {heading}")
     
     return articles_data, combined_content, citations
+
+# ZIM file selection endpoints
+@app.route("/zim", methods=["GET"])
+def zim_selector_page():
+    """Serve the ZIM file selection page."""
+    return render_template('zim_selector.html')
+
+@app.route("/zim/list", methods=["GET"])
+def list_zim_files_route():
+    """List available ZIM files in a directory."""
+    directory_path = request.args.get('directory', '/Users/drcoffman/code/zim')
+    
+    if not os.path.exists(directory_path):
+        return jsonify({"error": "Directory does not exist"}), 400
+    
+    zim_files = list_zim_files(directory_path)
+    return jsonify({
+        "directory": directory_path,
+        "zim_files": zim_files,
+        "count": len(zim_files)
+    })
+
+@app.route("/zim/select", methods=["POST"])
+def select_zim_file():
+    """Select and switch to a new ZIM file."""
+    data = request.json or {}
+    zim_file_path = data.get("zim_file_path")
+    
+    if not zim_file_path:
+        return jsonify({"error": "zim_file_path is required"}), 400
+    
+    if not os.path.exists(zim_file_path):
+        return jsonify({"error": "ZIM file does not exist"}), 400
+    
+    try:
+        # Restart kiwix-serve with the new ZIM file
+        restart_kiwix_serve_with_zim(zim_file_path)
+        
+        # Update the config file with the new path
+        config.set('PATHS', 'ZIM_FILE_PATH', zim_file_path)
+        with open(CONFIG_FILE_PATH, 'w') as configfile:
+            config.write(configfile)
+        
+        return jsonify({
+            "message": "ZIM file switched successfully",
+            "zim_file_path": zim_file_path,
+            "zim_name": get_zim_file_name(zim_file_path)
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to switch ZIM file: {str(e)}"}), 500
+
+@app.route("/zim/current", methods=["GET"])
+def get_current_zim():
+    """Get information about the currently loaded ZIM file."""
+    return jsonify({
+        "zim_file_path": ZIM_FILE_PATH,
+        "zim_name": get_zim_file_name(),
+        "exists": os.path.exists(ZIM_FILE_PATH)
+    })
+
 # Search endpoint
 @app.route("/search", methods=["POST"])
 def search():
-    data = request.json
+    data = request.json or {}
     query = data.get("query")
     context = data.get("context", [])
     try:
@@ -446,7 +555,7 @@ def list_models():
 # OpenAI-compatible /chat/completions endpoint
 @app.route("/v1/chat/completions", methods=["POST"])
 def chat_completions():
-    data = request.json
+    data = request.json or {}
     # Extract the user's messages from the OpenAI-style request
     messages = data.get("messages", [])
     
