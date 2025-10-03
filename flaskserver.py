@@ -75,6 +75,17 @@ def exclude_references_section(html_content, verbose_debug=False):
     # Pattern to match Works Cited section with various HTML formatting variations
     works_cited_pattern = r'<[^>]*id\s*=\s*["\']Works_cited["\'][^>]*>.*?(?=<[^>]*id\s*=\s*["\'][^"\']*["\'][^>]*>|$)'
     
+    # Count occurrences of References sections
+    references_count = len(re.findall(r'<[^>]*id\s*=\s*["\']References["\'][^>]*>', html_content, re.IGNORECASE))
+    works_cited_count = len(re.findall(r'<[^>]*id\s*=\s*["\']Works_cited["\'][^>]*>', html_content, re.IGNORECASE))
+    
+    # Print warning if multiple References sections found
+    if references_count > 1:
+        print(f"\n⚠️  WARNING: Found {references_count} References sections. Some data may have been excluded.")
+    
+    if works_cited_count > 1:
+        print(f"\n⚠️  WARNING: Found {works_cited_count} Works Cited sections. Some data may have been excluded.")
+    
     # Find both sections
     references_match = re.search(references_pattern, html_content, re.IGNORECASE | re.DOTALL)
     works_cited_match = re.search(works_cited_pattern, html_content, re.IGNORECASE | re.DOTALL)
