@@ -4,6 +4,7 @@ import atexit
 import signal
 import subprocess
 import time
+import re
 from flask import Flask, request, jsonify, Response, stream_with_context, render_template
 from flask_cors import CORS
 from bs4 import BeautifulSoup
@@ -12,6 +13,110 @@ import json
 import configparser
 import glob
 import pprint as pp
+
+def extract_json_from_text(text):
+    """
+    Extract JSON from text that may contain prefix and suffix content.
+    Looks for JSON array or object patterns and extracts the first valid JSON found.
+    """
+    if not text:
+        return None
+    
+    # Remove any markdown code block markers
+    text = re.sub(r'```json\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    
+    # Look for JSON array pattern [ ... ]
+    array_match = re.search(r'\[[^\]]*\]', text)
+    if array_match:
+        try:
+            json_str = array_match.group(0)
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+    
+    # Look for JSON object pattern { ... }
+    object_match = re.search(r'\{[^}]*\}', text)
+    if object_match:
+        try:
+            json_str = object_match.group(0)
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+    
+    # If no pattern matches, try to parse the entire text
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        return None
+
+def exclude_references_section(html_content, verbose_debug=False):
+    """
+    Exclude content after the 'References' and 'Works Cited' sections from HTML content.
+    Uses regular expressions to handle variations in HTML formatting.
+    
+    Args:
+        html_content (str): The HTML content to process
+        verbose_debug (bool): Whether to print debug information
+    
+    Returns:
+        tuple: (cleaned_content, excluded_references)
+    """
+    if not html_content:
+        return html_content, ""
+    
+    # Pattern to match References section with various HTML formatting variations
+    # This pattern looks for:
+    # - id="References" or id='References' or id = "References" etc.
+    # - Can be in h1, h2, h3, h4, h5, h6, div, section, or other elements
+    # - Handles various spacing and quote variations
+    references_pattern = r'<[^>]*id\s*=\s*["\']References["\'][^>]*>.*?(?=<[^>]*id\s*=\s*["\'][^"\']*["\'][^>]*>|$)'
+    
+    # Pattern to match Works Cited section with various HTML formatting variations
+    works_cited_pattern = r'<[^>]*id\s*=\s*["\']Works_cited["\'][^>]*>.*?(?=<[^>]*id\s*=\s*["\'][^"\']*["\'][^>]*>|$)'
+    
+    # Find both sections
+    references_match = re.search(references_pattern, html_content, re.IGNORECASE | re.DOTALL)
+    works_cited_match = re.search(works_cited_pattern, html_content, re.IGNORECASE | re.DOTALL)
+    
+    # Determine which section comes first (if any)
+    earliest_match = None
+    excluded_references = ""
+    
+    if references_match and works_cited_match:
+        if references_match.start() < works_cited_match.start():
+            earliest_match = references_match
+            excluded_references = html_content[references_match.start():]
+        else:
+            earliest_match = works_cited_match
+            excluded_references = html_content[works_cited_match.start():]
+    elif references_match:
+        earliest_match = references_match
+        excluded_references = html_content[references_match.start():]
+    elif works_cited_match:
+        earliest_match = works_cited_match
+        excluded_references = html_content[works_cited_match.start():]
+    
+    if earliest_match:
+        # Keep only the content before the earliest section
+        cleaned_content = html_content[:earliest_match.start()]
+        
+        if verbose_debug:
+            section_name = "References" if earliest_match == references_match else "Works Cited"
+            print(f"\n=== EXCLUDED {section_name.upper()} SECTION ===")
+            print(f"Excluded content length: {len(excluded_references)} characters")
+            print(f"Cleaned content length: {len(cleaned_content)} characters")
+            print("=" * 50)
+        
+        return cleaned_content, excluded_references
+    else:
+        if verbose_debug:
+            print("\n=== NO REFERENCES OR WORKS CITED SECTION FOUND ===")
+            print("No References or Works Cited section found in the content")
+            print("=" * 50)
+        
+        return html_content, ""
+
 app = Flask(__name__)
 CORS(app)
 # Define the path to the config file
@@ -212,8 +317,8 @@ def select_top_3_headings(query, headings):
             json={
                 "model": AI_MODEL,
                 "messages": [
-                    {"role": "system", "content": "You are a research assistant. Your task is to select the 3 most relevant headings from the list provided based on the user's query. Ensure all headings are in the provided list. Return them as a JSON array in order of relevance (most relevant first)."},
-                    {"role": "user", "content": f"The user's query is: {query}. Here are the headings:\n{headings_str}\n\nPlease select the 3 most relevant headings and return them as a JSON array like: [\"heading1\", \"heading2\", \"heading3\"]"},
+                    {"role": "system", "content": "You are a research assistant. Your task is to select the 3 most relevant headings from the list provided based on the user's query. Ensure all headings are in the provided list. You MUST respond with ONLY a valid JSON array. Do not include any explanatory text, markdown formatting, or other content. Only return the JSON array."},
+                    {"role": "user", "content": f"The user's query is: {query}. Here are the headings:\n{headings_str}\n\nSelect the 3 most relevant headings and return ONLY a JSON array in this exact format: [\"heading1\", \"heading2\", \"heading3\"]\n\nIMPORTANT: Your response must contain ONLY the JSON array, nothing else."},
                 ],
                 "stream": False,
                 "options": {
@@ -238,22 +343,23 @@ def select_top_3_headings(query, headings):
             print("Error: Empty response from AI model")
             return headings[:3]
         
-        # Parse the JSON response
-        import json
-        try:
-            selected_headings = json.loads(selected_headings_json)
-            # Validate that we got a list
-            if not isinstance(selected_headings, list):
-                print(f"Error: Expected list but got {type(selected_headings)}")
-                return headings[:3]
-            # Limit to 3 headings max
-            selected_headings = selected_headings[:3]
-            print(f"Top 3 headings: {selected_headings}")
-            return selected_headings
-        except json.JSONDecodeError as json_err:
-            print(f"Error parsing JSON: {json_err}")
+        # Parse the JSON response using the extraction function
+        selected_headings = extract_json_from_text(selected_headings_json)
+        
+        if selected_headings is None:
+            print(f"Error: Could not extract valid JSON from response")
             print(f"Raw response: {selected_headings_json}")
             return headings[:3]
+        
+        # Validate that we got a list
+        if not isinstance(selected_headings, list):
+            print(f"Error: Expected list but got {type(selected_headings)}")
+            return headings[:3]
+        
+        # Limit to 3 headings max
+        selected_headings = selected_headings[:3]
+        print(f"Top 3 headings: {selected_headings}")
+        return selected_headings
     except Exception as e:
         print(f"Error selecting top 3 headings: {e}")
         # Fallback: return first 3 headings
@@ -346,7 +452,16 @@ def fetch_article_content(heading, zim_path=None):
         # Clean up any remaining formatting issues
         article_text = article_text.strip()
         
-        return article_text, article_url
+        # Exclude References section if VERBOSE_DEBUG is True
+        VERBOSE_DEBUG = True  # Set to False for production
+        cleaned_content, excluded_references = exclude_references_section(article_text, VERBOSE_DEBUG)
+        
+        if VERBOSE_DEBUG and excluded_references:
+            print(f"\n=== EXCLUDED REFERENCES FOR ARTICLE: {heading} ===")
+            print(f"Excluded content: {excluded_references[:500]}...")  # Show first 500 chars
+            print("=" * 50)
+        
+        return cleaned_content, article_url
     except requests.exceptions.RequestException as e:
         print(f"Error fetching article content: {e}")
         return None, None
