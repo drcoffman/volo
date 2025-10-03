@@ -84,6 +84,11 @@ const App = () => {
     window.open('http://localhost:3000', '_blank');
   };
 
+  // Handle opening ZIM selector
+  const handleOpenZimSelector = () => {
+    window.open('http://localhost:1255/zim', '_blank');
+  };
+
   return (
     <div className="app">
       <div className="header">
@@ -92,6 +97,9 @@ const App = () => {
         </button>
         <button className="new-tab-button" onClick={handleOpenNewTab}>
           New Tab
+        </button>
+        <button className="zim-selector-button" onClick={handleOpenZimSelector}>
+          ZIM Selector
         </button>
       </div>
       <div className="chat-container">

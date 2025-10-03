@@ -11,6 +11,7 @@ import requests
 import json
 import configparser
 import glob
+import pprint as pp
 app = Flask(__name__)
 CORS(app)
 # Define the path to the config file
@@ -199,7 +200,7 @@ def select_best_heading(query, headings):
 
 # Function to select the top 3 most relevant headings using the LLM
 def select_top_3_headings(query, headings):
-    print("Selecting the top 3 most relevant headings...")
+    print("\n \n \n Selecting the top 3 most relevant headings...")
     
     # Construct the headings string with newlines
     headings_str = '\n'.join(headings)
@@ -222,14 +223,37 @@ def select_top_3_headings(query, headings):
             }
         )
         response.raise_for_status()
-        selected_headings_json = response.json()["message"]["content"].strip()
-        print(f"Selected headings JSON: {selected_headings_json}")
+        response_data = response.json()
+        
+        # Check if response has the expected structure
+        if "message" not in response_data or "content" not in response_data["message"]:
+            print("Error: Invalid response structure from AI model")
+            return headings[:3]
+            
+        selected_headings_json = response_data["message"]["content"].strip()
+        print(f"\n \n \n Selected headings JSON: {selected_headings_json}")
+        
+        # Check if response is empty
+        if not selected_headings_json:
+            print("Error: Empty response from AI model")
+            return headings[:3]
         
         # Parse the JSON response
         import json
-        selected_headings = json.loads(selected_headings_json)
-        print(f"Top 3 headings: {selected_headings}")
-        return selected_headings
+        try:
+            selected_headings = json.loads(selected_headings_json)
+            # Validate that we got a list
+            if not isinstance(selected_headings, list):
+                print(f"Error: Expected list but got {type(selected_headings)}")
+                return headings[:3]
+            # Limit to 3 headings max
+            selected_headings = selected_headings[:3]
+            print(f"Top 3 headings: {selected_headings}")
+            return selected_headings
+        except json.JSONDecodeError as json_err:
+            print(f"Error parsing JSON: {json_err}")
+            print(f"Raw response: {selected_headings_json}")
+            return headings[:3]
     except Exception as e:
         print(f"Error selecting top 3 headings: {e}")
         # Fallback: return first 3 headings
@@ -244,19 +268,19 @@ def get_zim_file_name(zim_path=None):
 
 # Function to list available ZIM files in a directory
 def list_zim_files(directory_path):
-    """List all .zim files in the specified directory and subdirectories."""
+    """List all .zim files in the specified directory only (no subdirectories)."""
     zim_files = []
     try:
-        # Search for .zim files recursively
-        pattern = os.path.join(directory_path, "**", "*.zim")
-        found_files = glob.glob(pattern, recursive=True)
+        # Search for .zim files in the current directory only
+        pattern = os.path.join(directory_path, "*.zim")
+        found_files = glob.glob(pattern)
         
         for file_path in found_files:
             file_info = {
                 'path': file_path,
                 'name': os.path.basename(file_path),
                 'size': os.path.getsize(file_path),
-                'relative_path': os.path.relpath(file_path, directory_path)
+                'relative_path': os.path.basename(file_path)  # Just the filename since it's in the same directory
             }
             zim_files.append(file_info)
         
@@ -299,10 +323,29 @@ def fetch_article_content(heading, zim_path=None):
         # Fetch the HTML content
         response = requests.get(article_url, headers=API_HEADERS)
         response.raise_for_status()  # Raise an error for bad status codes
+        
+        # Ensure proper encoding
+        response.encoding = 'utf-8'
+        
         # Parse the HTML using BeautifulSoup
         soup = BeautifulSoup(response.text, "html.parser")
-        # Extract readable text from the article
-        article_text = soup.get_text(separator="\n", strip=True)
+        
+        # Remove only truly noisy elements while preserving all semantic HTML structure
+        for element in soup.find_all(['script', 'style', 'sup', 'sub']):
+            element.decompose()
+        
+        # Convert to string while preserving HTML tags and creating flowing text
+        article_text = str(soup)
+        
+        # Clean up excessive whitespace while preserving HTML structure
+        import re
+        # Replace multiple spaces with single space (but preserve HTML tag spacing)
+        article_text = re.sub(r'[ ]{2,}', ' ', article_text)
+        # Replace multiple newlines with single space to create flowing text
+        article_text = re.sub(r'\n+', ' ', article_text)
+        # Clean up any remaining formatting issues
+        article_text = article_text.strip()
+        
         return article_text, article_url
     except requests.exceptions.RequestException as e:
         print(f"Error fetching article content: {e}")
@@ -404,6 +447,19 @@ def search():
     data = request.json or {}
     query = data.get("query")
     context = data.get("context", [])
+    
+    # Debug configuration
+    VERBOSE_DEBUG = True  # Set to False for production
+    
+    def debug_print(label, data, max_length=None):
+        if VERBOSE_DEBUG:
+            print(f"\n=== {label} ===")
+            if max_length and isinstance(data, str) and len(data) > max_length:
+                pp.pprint(data[:max_length] + "...", width=100)
+            else:
+                pp.pprint(data, width=100)
+            print("=" * 50)
+    
     try:
         # Step 1: Use Ollama with tool calling to generate four distinct search queries
         response = requests.post(
@@ -449,15 +505,16 @@ def search():
             }
         )
         response.raise_for_status()
+        debug_print("Response", response.json())
         tool_calls = response.json().get("message", {}).get("tool_calls", [])
         if tool_calls:
-            print(f"Tool calls: {tool_calls}")
+            debug_print("Tool calls", tool_calls)
             tool_call = tool_calls[0]
             if tool_call["function"]["name"] == "search_engine":
                 # Access the arguments directly (it's already a dictionary)
                 arguments = tool_call["function"]["arguments"]
                 search_queries = arguments.get("queries", [])
-                print(f"Generated search queries: {search_queries}")
+                debug_print("Generated search queries", search_queries)
                 # Step 2: Perform searches for each query and aggregate the results
                 all_headings = []
                 for search_query in search_queries:
@@ -475,17 +532,19 @@ def search():
                 articles_data, combined_content, citations = fetch_multiple_articles(top_3_headings)
                 if not articles_data:
                     return "Failed to fetch article content. This can happen if the ZIM file path is incorrect or if the AI made a mistake in selecting the headings."
-                
+                debug_print("Articles data", articles_data)
+                debug_print("Combined content", combined_content, max_length=500)
+                debug_print("Citations", citations)
                 updated_context = context + [
                     {"role": "user", "content": query},
                     {"role": "assistant", "content": f"Search results from {len(articles_data)} articles: {combined_content}"}
                 ]
-                
+                debug_print("Updated context", updated_context)
                 # Step 5: Generate a detailed response based on the aggregated search results
                 # Combine all citations
                 all_citations = "\n".join(citations)
                 print(f"🔗 Using {len(articles_data)} article URLs")
-                print(f"📝 All citations: {all_citations}")
+                debug_print("All citations", all_citations)
                 
                 def generate_final_response():
                     # First, yield all citations

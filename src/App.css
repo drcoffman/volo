@@ -21,7 +21,7 @@ body {
   margin-bottom: 10px;
 }
 
-.new-tab-button, .reset-button {
+.new-tab-button, .reset-button, .zim-selector-button {
   padding: 10px 20px;
   color: rgb(112, 112, 110);
   background-color: rgb(251, 251, 248);
@@ -44,7 +44,14 @@ body {
   margin-left: 1px;
 }
 
-.new-tab-button:hover, .reset-button:hover {
+.zim-selector-button {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12%;
+}
+
+.new-tab-button:hover, .reset-button:hover, .zim-selector-button:hover {
   background-color: rgb(235, 235, 235);
 }
 
