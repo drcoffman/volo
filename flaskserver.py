@@ -50,6 +50,197 @@ def extract_json_from_text(text):
     except json.JSONDecodeError:
         return None
 
+def convert_html_to_markdown(html_content, verbose_debug=False):
+    """
+    Convert HTML content to clean markdown format.
+    Handles headings, tables, lists, and links while removing unnecessary HTML markup.
+    
+    Args:
+        html_content (str): The HTML content to convert
+        verbose_debug (bool): Whether to print debug information
+    
+    Returns:
+        str: Clean markdown content
+    """
+    if not html_content:
+        return ""
+    
+    from bs4 import BeautifulSoup
+    import re
+    
+    # Parse HTML
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Remove script, style, and other non-content elements
+    for element in soup.find_all(['script', 'style', 'nav', 'footer', 'header']):
+        element.decompose()
+    for title in soup.find_all('title'):
+        title_text = title.get_text().strip()
+        if title_text:
+            title.replace_with(f"# {title_text}\n") # the first level is the title
+ 
+    # Convert headings (h1-h6) to markdown
+    for i in range(1, 7):
+        for heading in soup.find_all(f'h{i}'):
+            # Get the text content
+            heading_text = heading.get_text().strip()
+            if heading_text:
+                # Create markdown heading with appropriate number of #
+                markdown_heading = f"{'#' * (i)} {heading_text}\n" # the first level is the title
+                # Replace the heading with markdown
+                heading.replace_with(markdown_heading)
+    
+    # Convert tables to markdown tables
+    for table in soup.find_all('table'):
+        markdown_table = convert_table_to_markdown(table)
+        if markdown_table:
+            table.replace_with(markdown_table)
+    
+    # Convert lists to markdown lists
+    for ul in soup.find_all('ul'):
+        markdown_list = convert_list_to_markdown(ul, ordered=False)
+        if markdown_list:
+            ul.replace_with(markdown_list)
+    
+    for ol in soup.find_all('ol'):
+        markdown_list = convert_list_to_markdown(ol, ordered=True)
+        if markdown_list:
+            ol.replace_with(markdown_list)
+    
+    # Convert links to markdown links
+    for link in soup.find_all('a'):
+        href = link.get('href', '')
+        text = link.get_text().strip()
+        if href and text:
+            markdown_link = f"[{text}]({href})"
+            link.replace_with(markdown_link)
+    
+    # Convert paragraphs and other block elements
+    for p in soup.find_all('p'):
+        p_text = p.get_text().strip()
+        if p_text:
+            p.replace_with(p_text + '\n\n')
+    
+    # Convert divs to line breaks
+    for div in soup.find_all('div'):
+        div_text = div.get_text().strip()
+        if div_text:
+            div.replace_with(div_text + '\n')
+    
+    # Get the final text content
+    markdown_content = soup.get_text()
+    
+    # Clean up excessive whitespace
+    markdown_content = re.sub(r'\n\s*\n\s*\n', '\n\n', markdown_content)
+    markdown_content = re.sub(r'[ \t]+', ' ', markdown_content)
+    markdown_content = markdown_content.strip()
+    
+    if verbose_debug:
+        print(f"\n=== HTML TO MARKDOWN CONVERSION ===")
+        print(f"Original HTML length: {len(html_content)} characters")
+        print(f"Markdown length: {len(markdown_content)} characters")
+        print(f"Reduction: {((len(html_content) - len(markdown_content)) / len(html_content) * 100):.1f}%")
+        
+        # Save before and after files for comparison
+        import os
+        import time
+        
+        timestamp = int(time.time())
+        
+        # Save original HTML content
+        html_filename = f"html_before_conversion_{timestamp}.html"
+        with open(html_filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Original HTML saved to: {html_filename}")
+        
+        # Save converted markdown content
+        markdown_filename = f"markdown_after_conversion_{timestamp}.md"
+        with open(markdown_filename, 'w', encoding='utf-8') as f:
+            f.write(markdown_content)
+        print(f"Converted Markdown saved to: {markdown_filename}")
+        
+        print("=" * 50)
+    
+    return markdown_content
+
+def convert_table_to_markdown(table):
+    """
+    Convert an HTML table to markdown table format.
+    
+    Args:
+        table: BeautifulSoup table element
+    
+    Returns:
+        str: Markdown table or empty string if conversion fails
+    """
+    try:
+        rows = []
+        
+        # Get all table rows
+        for tr in table.find_all('tr'):
+            row = []
+            for cell in tr.find_all(['td', 'th']):
+                cell_text = cell.get_text().strip()
+                # Clean up cell text
+                cell_text = re.sub(r'\s+', ' ', cell_text)
+                row.append(cell_text)
+            
+            if row:  # Only add non-empty rows
+                rows.append(row)
+        
+        if not rows:
+            return ""
+        
+        # Create markdown table
+        markdown_lines = []
+        
+        # Add header row
+        if rows:
+            header = rows[0]
+            markdown_lines.append('| ' + ' | '.join(header) + ' |')
+            markdown_lines.append('| ' + ' | '.join(['---'] * len(header)) + ' |')
+            
+            # Add data rows
+            for row in rows[1:]:
+                # Ensure row has same number of columns as header
+                while len(row) < len(header):
+                    row.append('')
+                markdown_lines.append('| ' + ' | '.join(row) + ' |')
+        
+        return '\n'.join(markdown_lines) + '\n\n'
+    
+    except Exception as e:
+        print(f"Error converting table to markdown: {e}")
+        return ""
+
+def convert_list_to_markdown(list_element, ordered=False):
+    """
+    Convert an HTML list to markdown list format.
+    
+    Args:
+        list_element: BeautifulSoup ul or ol element
+        ordered (bool): Whether this is an ordered list
+    
+    Returns:
+        str: Markdown list
+    """
+    try:
+        markdown_lines = []
+        
+        for i, li in enumerate(list_element.find_all('li'), 1):
+            li_text = li.get_text().strip()
+            if li_text:
+                if ordered:
+                    markdown_lines.append(f"{i}. {li_text}")
+                else:
+                    markdown_lines.append(f"- {li_text}")
+        
+        return '\n'.join(markdown_lines) + '\n\n' if markdown_lines else ""
+    
+    except Exception as e:
+        print(f"Error converting list to markdown: {e}")
+        return ""
+
 def exclude_references_section(html_content, verbose_debug=False):
     """
     Exclude content after the 'References' and 'Works Cited' sections from HTML content.
@@ -117,6 +308,25 @@ def exclude_references_section(html_content, verbose_debug=False):
             print(f"\n=== EXCLUDED {section_name.upper()} SECTION ===")
             print(f"Excluded content length: {len(excluded_references)} characters")
             print(f"Cleaned content length: {len(cleaned_content)} characters")
+            
+            # Save excluded content for review
+            import os
+            import time
+            
+            timestamp = int(time.time())
+            
+            # Save excluded references content
+            excluded_filename = f"excluded_references_{timestamp}.html"
+            with open(excluded_filename, 'w', encoding='utf-8') as f:
+                f.write(excluded_references)
+            print(f"Excluded References content saved to: {excluded_filename}")
+            
+            # Save cleaned content
+            cleaned_filename = f"cleaned_content_{timestamp}.html"
+            with open(cleaned_filename, 'w', encoding='utf-8') as f:
+                f.write(cleaned_content)
+            print(f"Cleaned content saved to: {cleaned_filename}")
+            
             print("=" * 50)
         
         return cleaned_content, excluded_references
@@ -463,16 +673,15 @@ def fetch_article_content(heading, zim_path=None):
         # Clean up any remaining formatting issues
         article_text = article_text.strip()
         
-        # Exclude References section if VERBOSE_DEBUG is True
-        VERBOSE_DEBUG = True  # Set to False for production
-        cleaned_content, excluded_references = exclude_references_section(article_text, VERBOSE_DEBUG)
+        # Exclude References section if verbose_debug is True
+        verbose_debug = True  # Set to False for production
+        cleaned_content, excluded_references = exclude_references_section(article_text, verbose_debug)
         
-        if VERBOSE_DEBUG and excluded_references:
-            print(f"\n=== EXCLUDED REFERENCES FOR ARTICLE: {heading} ===")
-            print(f"Excluded content: {excluded_references[:500]}...")  # Show first 500 chars
-            print("=" * 50)
         
-        return cleaned_content, article_url
+        # Convert HTML to markdown for better token efficiency
+        markdown_content = convert_html_to_markdown(cleaned_content, verbose_debug)
+        
+        return markdown_content, article_url
     except requests.exceptions.RequestException as e:
         print(f"Error fetching article content: {e}")
         return None, None
@@ -497,16 +706,60 @@ def fetch_multiple_articles(headings, zim_path=None):
             })
             
             # Add article to combined content with clear separation
-            combined_content += f"\n\n=== ARTICLE {i}: {heading} ===\n\n"
-            combined_content += article_content
-            
+            if i == 1:
+                combined_content += f"\n\n=== ARTICLE {i}: {heading} ===\n\n"
+                combined_content += article_content
+            else:
+                # For articles 2 and 3, find the length to first heading 2 or 3
+                section_one = find_length_to_first_heading(article_content)
+                combined_content += f"\n\n=== ARTICLE {i}: {heading} ===\n\n"
+                combined_content += article_content[:section_one] 
+                print(f"Article {i}: {heading} truncated to {section_one} characters (first section only)")              
             # Create citation
             citation = f"[📖 Source {i}: {heading}]({article_url})"
             citations.append(citation)
         else:
             print(f"Failed to fetch article: {heading}")
-    
+    verbose_debug = False
+    if verbose_debug:
+        debug_print("********Combined content********", combined_content, max_length=2000)
+
     return articles_data, combined_content, citations
+def find_length_to_first_heading(content):
+    """
+    Find the length to the first instance of heading 2 (##) or heading 3 (###) in the content.
+    
+    Args:
+        content (str): The markdown content to search
+    
+    Returns:
+        int: Length to the first heading, or full content length if no heading found
+    """
+    import re
+    
+    # Look for ## or ### at the start of a line
+    pattern = r'^\s*(#{2,3})\s+'
+    
+    # Find all matches with their positions
+    matches = []
+    for match in re.finditer(pattern, content, re.MULTILINE):
+        matches.append(match.start())
+    
+    if matches:
+        # Return the position of the first heading
+        return matches[0]
+    else:
+        # If no heading found, return the full content length
+        return len(content)
+
+def debug_print(label, data, max_length=None):
+    print(f"\n=== {label} ===")
+    if max_length and isinstance(data, str) and len(data) > max_length:
+        pp.pprint(data[:max_length] + "...", width=100)
+    else:
+        pp.pprint(data, width=100)
+    print("=" * 50)
+    return
 
 # ZIM file selection endpoints
 @app.route("/zim", methods=["GET"])
@@ -575,16 +828,9 @@ def search():
     context = data.get("context", [])
     
     # Debug configuration
-    VERBOSE_DEBUG = True  # Set to False for production
+    VERBOSE_DEBUG = False  # Set to False for production
     
-    def debug_print(label, data, max_length=None):
-        if VERBOSE_DEBUG:
-            print(f"\n=== {label} ===")
-            if max_length and isinstance(data, str) and len(data) > max_length:
-                pp.pprint(data[:max_length] + "...", width=100)
-            else:
-                pp.pprint(data, width=100)
-            print("=" * 50)
+
     
     try:
         # Step 1: Use Ollama with tool calling to generate four distinct search queries
@@ -594,7 +840,7 @@ def search():
             json={
                 "model": AI_MODEL,
                 "messages": [
-                    {"role": "system", "content": "You are a research assistant. Use the search_engine tool to generate four distinct search queries that will help gather a broad range of information related to the user's query. Each query should focus on a different aspect or angle of the topic."},
+                    {"role": "system", "content": "You are a research assistant that will gather information from different Wikipedia articles. Use the search_engine tool to generate four distinct search queries that will help answer the user's question comprehensively.\n\nFor COMPARISON/CONTRAST queries (like 'gecko vs gila monster' or 'compare X and Y'):\n- Generate 2 queries focused on the first topic (e.g., 'gecko characteristics', 'gecko habitat diet') \n- Generate 2 queries focused on the second topic (e.g., 'gila monster characteristics', 'gila monster habitat diet')\n- This ensures balanced coverage of both topics for comparison\n\nFor SINGLE TOPIC queries:\n- Generate 4 queries covering different aspects of the topic (e.g., 'X characteristics', 'X habitat', 'X behavior', 'X evolution')\n\nAlways ensure queries are specific, focused, and will retrieve relevant Wikipedia content."},
                     *context,
                     {"role": "user", "content": query},
                 ],
@@ -603,7 +849,7 @@ def search():
                         'type': 'function',
                         'function': {
                             'name': 'search_engine',
-                            'description': 'A Wikipedia search engine. Generate four distinct search queries to maximize the spread of search results.',
+                            'description': 'A Wikipedia search engine. Generate four distinct search queries to maximize comprehensive coverage of the user\'s question. For comparison queries, ensure balanced coverage of both topics (2 queries per topic). For single topics, cover different aspects (characteristics, habitat, behavior, etc.).',
                             'parameters': {
                                 'type': 'object',
                                 'properties': {
@@ -611,11 +857,11 @@ def search():
                                         'type': 'array',
                                         'items': {
                                             'type': 'string',
-                                            'description': 'A distinct search query focusing on a specific aspect of the topic.'
+                                            'description': 'A distinct search query focusing on a specific topic in the query.'
                                         },
                                         'minItems': 4,
                                         'maxItems': 4,
-                                        'description': 'Four distinct search queries to maximize the spread of search results.'
+                                        'description': 'Four distinct search queries. For comparisons: 2 queries per topic. For single topics: cover different aspects like characteristics, habitat, behavior, evolution.'
                                     },
                                 },
                                 'required': ['queries']
@@ -658,14 +904,14 @@ def search():
                 articles_data, combined_content, citations = fetch_multiple_articles(top_3_headings)
                 if not articles_data:
                     return "Failed to fetch article content. This can happen if the ZIM file path is incorrect or if the AI made a mistake in selecting the headings."
-                debug_print("Articles data", articles_data)
-                debug_print("Combined content", combined_content, max_length=500)
-                debug_print("Citations", citations)
+                #debug_print("Articles data", articles_data)
+                #debug_print("Combined content", combined_content, max_length=500)
+                #debug_print("Citations", citations)
                 updated_context = context + [
                     {"role": "user", "content": query},
                     {"role": "assistant", "content": f"Search results from {len(articles_data)} articles: {combined_content}"}
                 ]
-                debug_print("Updated context", updated_context)
+                debug_print("Updated context", updated_context) 
                 # Step 5: Generate a detailed response based on the aggregated search results
                 # Combine all citations
                 all_citations = "\n".join(citations)

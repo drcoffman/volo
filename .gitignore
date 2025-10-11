@@ -24,3 +24,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 src/config.js
+
+# debugging files
+cleaned_content*
+excluded_references*
+html_before_conversion*
+markdown_after_conversion*
+/logs
+example_updated_context.txt
