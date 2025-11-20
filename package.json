@@ -18,15 +18,15 @@
     "web-vitals": "^4.2.4"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "start-server": "python3 flaskserver.py & python flaskserver.py & npm start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "dev:api": "python3 flaskserver.py",
-    "dev:client": "npm start",
-    "dev": "npm run dev:api && npm run dev:client"
-  },
+  "start-client": "react-scripts start",
+  "start-api": "python flaskserver.py",
+  "start-server": "concurrently \"npm run start-api\" \"npm run start-client\"",
+
+  "start": "react-scripts start",
+  "build": "react-scripts build",
+  "test": "react-scripts test",
+  "eject": "react-scripts eject"
+},
   "eslintConfig": {
     "extends": [
       "react-app",
@@ -44,5 +44,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

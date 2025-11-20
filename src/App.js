@@ -7,6 +7,11 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css'; // Import KaTeX CSS
 import './App.css'; // For styling
 
+const API_BASE =
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:1255'
+    : `http://${window.location.hostname}:1255`;
+
 const App = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([]);
@@ -29,7 +34,7 @@ const App = () => {
     setQuery('');
 
     try {
-      const response = await fetch('http://localhost:1255/search', {
+      const response = await fetch(`${API_BASE}/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
